@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"go.einride.tech/protoc-gen-typescript-http/internal/codegen"
-	"go.einride.tech/protoc-gen-typescript-http/internal/httprule"
+	"github.com/go-kratos/protoc-gen-typescript-http/internal/codegen"
+	"github.com/go-kratos/protoc-gen-typescript-http/internal/httprule"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
@@ -203,6 +203,10 @@ func (s serviceGenerator) generateMethodQuery(
 		case field.IsList():
 			f.P(t(4), "request.", jp, ".forEach((x) => {")
 			f.P(t(5), "queryParams.push(`", jp, "=${encodeURIComponent(x.toString())}`)")
+			f.P(t(4), "})")
+		case field.IsMap():
+			f.P(t(4), "request.", jp, ".forEach((value, key) => {")
+			f.P(t(5), "queryParams.push(`", jp, "[key]=${encodeURIComponent(value.toString())}`)")
 			f.P(t(4), "})")
 		default:
 			f.P(t(4), "queryParams.push(`", jp, "=${encodeURIComponent(request.", jp, ".toString())}`)")

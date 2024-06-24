@@ -1,6 +1,6 @@
-module go.einride.tech/protoc-gen-typescript-http
+module github.com/go-kratos/protoc-gen-typescript-http
 
-go 1.17
+go 1.18
 
 require (
 	google.golang.org/genproto v0.0.0-20201214200347-8c77b98c765d

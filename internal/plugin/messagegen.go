@@ -1,7 +1,7 @@
 package plugin
 
 import (
-	"go.einride.tech/protoc-gen-typescript-http/internal/codegen"
+	"github.com/go-kratos/protoc-gen-typescript-http/internal/codegen"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
