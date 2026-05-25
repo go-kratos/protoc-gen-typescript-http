@@ -11,15 +11,19 @@ import (
 )
 
 type serviceGenerator struct {
-	pkg        protoreflect.FullName
-	genHandler bool
-	service    protoreflect.ServiceDescriptor
+	pkg             protoreflect.FullName
+	genHandler      bool
+	genStreamInfra  bool
+	service         protoreflect.ServiceDescriptor
 }
 
 func (s serviceGenerator) Generate(f *codegen.File) error {
 	s.generateInterface(f)
 	if s.genHandler {
 		s.generateHandler(f)
+		if s.genStreamInfra {
+			generateStreamInfra(f)
+		}
 	}
 	return s.generateClient(f)
 }
@@ -29,6 +33,12 @@ func (s serviceGenerator) generateInterface(f *codegen.File) {
 	f.P("export interface ", descriptorTypeName(s.service), " {")
 	rangeMethods(s.service.Methods(), func(method protoreflect.MethodDescriptor) {
 		if !supportedMethod(method) {
+			return
+		}
+		if isStreamingMethod(method) {
+			r, _ := httprule.Get(method)
+			rule, _ := httprule.ParseRule(r)
+			generateStreamInterfaceMethod(f, s.pkg, method, rule)
 			return
 		}
 		commentGenerator{descriptor: method}.generateLeading(f, 1)
@@ -89,11 +99,15 @@ func (s serviceGenerator) generateMethod(f *codegen.File, method protoreflect.Me
 	if err != nil {
 		return fmt.Errorf("parse http rule: %w", err)
 	}
+	if isStreamingMethod(method) {
+		generateStreamClientMethod(f, s.pkg, method, rule)
+		return nil
+	}
 	f.P(t(2), method.Name(), "(request) { // eslint-disable-line @typescript-eslint/no-unused-vars")
-	s.generateMethodPathValidation(f, method.Input(), rule)
-	s.generateMethodPath(f, method.Input(), rule)
-	s.generateMethodBody(f, method.Input(), rule)
-	s.generateMethodQuery(f, method.Input(), rule)
+	generateMethodPathValidation(f, method.Input(), rule)
+	generateMethodPath(f, method.Input(), rule)
+	generateMethodBody(f, method.Input(), rule)
+	generateMethodQuery(f, method.Input(), rule)
 	f.P(t(3), "let uri = path;")
 	f.P(t(3), "if (queryParams.length > 0) {")
 	f.P(t(4), "uri += `?${queryParams.join(\"&\")}`")
@@ -110,7 +124,7 @@ func (s serviceGenerator) generateMethod(f *codegen.File, method protoreflect.Me
 	return nil
 }
 
-func (s serviceGenerator) generateMethodPathValidation(
+func generateMethodPathValidation(
 	f *codegen.File,
 	input protoreflect.MessageDescriptor,
 	rule httprule.Rule,
@@ -129,7 +143,7 @@ func (s serviceGenerator) generateMethodPathValidation(
 	}
 }
 
-func (s serviceGenerator) generateMethodPath(
+func generateMethodPath(
 	f *codegen.File,
 	input protoreflect.MessageDescriptor,
 	rule httprule.Rule,
@@ -155,7 +169,7 @@ func (s serviceGenerator) generateMethodPath(
 	f.P(t(3), "const path = `", path, "`; // eslint-disable-line quotes")
 }
 
-func (s serviceGenerator) generateMethodBody(
+func generateMethodBody(
 	f *codegen.File,
 	input protoreflect.MessageDescriptor,
 	rule httprule.Rule,
@@ -171,7 +185,7 @@ func (s serviceGenerator) generateMethodBody(
 	}
 }
 
-func (s serviceGenerator) generateMethodQuery(
+func generateMethodQuery(
 	f *codegen.File,
 	input protoreflect.MessageDescriptor,
 	rule httprule.Rule,
@@ -217,7 +231,13 @@ func (s serviceGenerator) generateMethodQuery(
 
 func supportedMethod(method protoreflect.MethodDescriptor) bool {
 	_, ok := httprule.Get(method)
-	return ok && !method.IsStreamingClient() && !method.IsStreamingServer()
+	if !ok {
+		return false
+	}
+	if method.IsStreamingClient() && !method.IsStreamingServer() {
+		return false
+	}
+	return true
 }
 
 func jsonPath(path httprule.FieldPath, message protoreflect.MessageDescriptor) string {

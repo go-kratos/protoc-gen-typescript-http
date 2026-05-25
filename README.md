@@ -52,3 +52,59 @@ export function siteClient() {
   return createShipperServiceClient(fetchRequestHandler);
 }
 ```
+
+### Streaming
+
+Server-streaming RPCs (`returns (stream ...)`) are generated as **SSE** (Server-Sent Events).
+Bidirectional streaming RPCs (`stream ... returns (stream ...)`) are generated as **WebSocket**.
+Both work alongside the existing `RequestHandler` — no extra configuration needed.
+
+Example proto:
+
+```protobuf
+service LogService {
+  rpc GetLog(GetLogRequest) returns (GetLogResponse) {
+    option (google.api.http) = {get: "/v1/logs"};
+  }
+
+  // Server-streaming → SSE
+  rpc TailLogs(TailLogsRequest) returns (stream LogEntry) {
+    option (google.api.http) = {get: "/v1/logs:tail"};
+  }
+
+  // Bidirectional streaming → WebSocket
+  rpc Chat(stream ChatMessage) returns (stream ChatMessage) {
+    option (google.api.http) = {get: "/v1/chat"};
+  }
+}
+```
+
+Generated usage:
+
+```typescript
+const client = createLogServiceClient(fetchRequestHandler);
+
+// Unary — unchanged
+const log = await client.GetLog({ name: "log/123" });
+
+// Server-streaming (SSE)
+const tail = client.TailLogs({ name: "log/123" });
+tail.subscribe((entry) => {
+  console.log("log entry:", entry.message);
+});
+tail.onError((err) => {
+  console.error("tail error:", err);
+});
+// tail.close();
+
+// Bidirectional streaming (WebSocket)
+const chat = client.Chat();
+chat.subscribe((msg) => {
+  console.log("received:", msg.text);
+});
+chat.onError((err) => {
+  console.error("chat error:", err);
+});
+chat.send({ text: "hello" });
+// chat.close();
+```
