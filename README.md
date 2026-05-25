@@ -89,17 +89,18 @@ const log = await client.GetLog({ name: "log/123" });
 
 // Server-streaming (SSE)
 const tail = client.TailLogs({ name: "log/123" });
-tail.subscribe((entry) => {
+const off = tail.onEvent((entry) => {
   console.log("log entry:", entry.message);
 });
 tail.onError((err) => {
   console.error("tail error:", err);
 });
+// off();  // unsubscribe
 // tail.close();
 
 // Bidirectional streaming (WebSocket)
 const chat = client.Chat();
-chat.subscribe((msg) => {
+chat.onEvent((msg) => {
   console.log("received:", msg.text);
 });
 chat.onError((err) => {

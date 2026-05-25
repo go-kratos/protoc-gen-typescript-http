@@ -96,12 +96,8 @@ type RequestType = {
 
 type RequestHandler = (request: RequestType, meta: { service: string, method: string }) => Promise<unknown>;
 
-export interface Subscription {
-  unsubscribe(): void;
-}
-
 export interface ServerStream<T> {
-  subscribe(onData: (data: T) => void): Subscription;
+  onEvent(listener: (data: T) => void): () => void;
   onError(handler: (error: Error) => void): void;
   close(): void;
 }
@@ -112,7 +108,7 @@ export interface DuplexStream<TIn, TOut> extends ServerStream<TOut> {
 
 class SSETransport<T> implements ServerStream<T> {
   private eventSource: EventSource;
-  private subscribers: Array<(data: T) => void> = [];
+  private listeners: Array<(data: T) => void> = [];
   private errorHandlers: Array<(error: Error) => void> = [];
 
   constructor(url: string) {
@@ -120,7 +116,7 @@ class SSETransport<T> implements ServerStream<T> {
     this.eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data) as T;
-        this.subscribers.forEach(fn => fn(data));
+        this.listeners.forEach(fn => fn(data));
       } catch (err) {
         this.errorHandlers.forEach(fn => fn(err as Error));
       }
@@ -130,12 +126,10 @@ class SSETransport<T> implements ServerStream<T> {
     };
   }
 
-  subscribe(onData: (data: T) => void): Subscription {
-    this.subscribers.push(onData);
-    return {
-      unsubscribe: () => {
-        this.subscribers = this.subscribers.filter(fn => fn !== onData);
-      },
+  onEvent(listener: (data: T) => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(fn => fn !== listener);
     };
   }
 
@@ -150,7 +144,7 @@ class SSETransport<T> implements ServerStream<T> {
 
 class WSTransport<TIn, TOut> implements DuplexStream<TIn, TOut> {
   private socket: WebSocket;
-  private subscribers: Array<(data: TOut) => void> = [];
+  private listeners: Array<(data: TOut) => void> = [];
   private errorHandlers: Array<(error: Error) => void> = [];
 
   constructor(url: string) {
@@ -158,7 +152,7 @@ class WSTransport<TIn, TOut> implements DuplexStream<TIn, TOut> {
     this.socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data as string) as TOut;
-        this.subscribers.forEach(fn => fn(data));
+        this.listeners.forEach(fn => fn(data));
       } catch (err) {
         this.errorHandlers.forEach(fn => fn(err as Error));
       }
@@ -174,12 +168,10 @@ class WSTransport<TIn, TOut> implements DuplexStream<TIn, TOut> {
     }
   }
 
-  subscribe(onData: (data: TOut) => void): Subscription {
-    this.subscribers.push(onData);
-    return {
-      unsubscribe: () => {
-        this.subscribers = this.subscribers.filter(fn => fn !== onData);
-      },
+  onEvent(listener: (data: TOut) => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(fn => fn !== listener);
     };
   }
 
