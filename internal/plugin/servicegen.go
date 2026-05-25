@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"go.einride.tech/protoc-gen-typescript-http/internal/codegen"
-	"go.einride.tech/protoc-gen-typescript-http/internal/httprule"
+	"github.com/go-kratos/protoc-gen-typescript-http/internal/codegen"
+	"github.com/go-kratos/protoc-gen-typescript-http/internal/httprule"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 

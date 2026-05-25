@@ -1,6 +1,6 @@
 version: v1
 
-name: buf.build/einride/protoc-gen-typescript-http
+name: buf.build/go-kratos/protoc-gen-typescript-http
 
 deps:
   - buf.build/googleapis/googleapis
