@@ -200,6 +200,10 @@ func (s serviceGenerator) generateMethodQuery(
 		jp := jsonPath(path, input)
 		f.P(t(3), "if (request.", nullPath, ") {")
 		switch {
+		case field.IsMap():
+			f.P(t(4), "Object.entries(request.", jp, ").forEach(([key, value]) => {")
+			f.P(t(5), "queryParams.push(`", jp, "[key]=${encodeURIComponent(value.toString())}`)")
+			f.P(t(4), "})")
 		case field.IsList():
 			f.P(t(4), "request.", jp, ".forEach((x) => {")
 			f.P(t(5), "queryParams.push(`", jp, "=${encodeURIComponent(x.toString())}`)")
