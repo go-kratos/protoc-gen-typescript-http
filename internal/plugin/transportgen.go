@@ -1,14 +1,25 @@
 package plugin
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/go-kratos/protoc-gen-typescript-http/internal/codegen"
 	"github.com/go-kratos/protoc-gen-typescript-http/internal/httprule"
+	"google.golang.org/genproto/googleapis/api/annotations"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-func generateStreamInfra(f *codegen.File) {
+func generateTransportInfra(f *codegen.File, defaultHost string) {
+	f.P("interface TransportMeta { service: string; method: string; }")
+	f.P()
+	f.P("export interface ClientTransport {")
+	f.P(t(1), "unary(path: string, method: string, body: string | null, meta: TransportMeta): Promise<unknown>;")
+	f.P(t(1), "serverStream<T>(path: string, meta: TransportMeta): ServerStream<T>;")
+	f.P(t(1), "duplexStream<TIn, TOut>(path: string, meta: TransportMeta): DuplexStream<TIn, TOut>;")
+	f.P("}")
+	f.P()
 	f.P("export interface ServerStream<T> {")
 	f.P(t(1), "onEvent(listener: (data: T) => void): () => void;")
 	f.P(t(1), "onError(handler: (error: Error) => void): void;")
@@ -19,7 +30,18 @@ func generateStreamInfra(f *codegen.File) {
 	f.P(t(1), "send(data: TIn): void;")
 	f.P("}")
 	f.P()
-	f.P("class SSETransport<T> implements ServerStream<T> {")
+	if defaultHost != "" {
+		f.P("const DEFAULT_HOST = ", strconv.Quote(defaultHost), ";")
+		f.P()
+	}
+	f.P("export interface TransportOptions {")
+	f.P(t(1), "baseUrl?: string;")
+	f.P(t(1), "headers?: Record<string, string>;")
+	f.P(t(1), "request?: typeof fetch;")
+	f.P("}")
+	f.P()
+	// SSETransport
+	f.P("export class SSETransport<T> implements ServerStream<T> {")
 	f.P(t(1), "private eventSource: EventSource;")
 	f.P(t(1), "private listeners: Array<(data: T) => void> = [];")
 	f.P(t(1), "private errorHandlers: Array<(error: Error) => void> = [];")
@@ -55,7 +77,8 @@ func generateStreamInfra(f *codegen.File) {
 	f.P(t(1), "}")
 	f.P("}")
 	f.P()
-	f.P("class WSTransport<TIn, TOut> implements DuplexStream<TIn, TOut> {")
+	// WSTransport
+	f.P("export class WSTransport<TIn, TOut> implements DuplexStream<TIn, TOut> {")
 	f.P(t(1), "private socket: WebSocket;")
 	f.P(t(1), "private listeners: Array<(data: TOut) => void> = [];")
 	f.P(t(1), "private errorHandlers: Array<(error: Error) => void> = [];")
@@ -97,15 +120,29 @@ func generateStreamInfra(f *codegen.File) {
 	f.P(t(1), "}")
 	f.P("}")
 	f.P()
-	f.P("export class StreamFactory {")
-	f.P(t(1), "static createServerStream<T>(url: string): ServerStream<T> {")
-	f.P(t(2), "return new SSETransport<T>(url);")
-	f.P(t(1), "}")
+	// createDefaultTransport
+	f.P("export function createDefaultTransport(opts?: TransportOptions): ClientTransport {")
+	f.P(t(1), "const baseUrl = opts?.baseUrl ?? (typeof DEFAULT_HOST !== 'undefined' ? `https://${DEFAULT_HOST}` : undefined);")
+	f.P(t(1), "const resolve = (path: string) => baseUrl ? `${baseUrl}/${path}` : path;")
+	f.P(t(1), "const doRequest = opts?.request ?? globalThis.fetch.bind(globalThis);")
+	f.P(t(1), "const headers = opts?.headers;")
 	f.P()
-	f.P(t(1), "static createDuplexStream<TIn, TOut>(url: string): DuplexStream<TIn, TOut> {")
-	f.P(t(2), "const wsUrl = url.replace(/^http/, 'ws');")
-	f.P(t(2), "return new WSTransport<TIn, TOut>(wsUrl);")
-	f.P(t(1), "}")
+	f.P(t(1), "return {")
+	f.P(t(2), "unary(path, method, body, _meta) {")
+	f.P(t(3), "const init: RequestInit = { method, body: body ?? undefined };")
+	f.P(t(3), "if (headers) { init.headers = headers; }")
+	f.P(t(3), "return doRequest(resolve(path), init).then(r => r.json());")
+	f.P(t(2), "},")
+	f.P()
+	f.P(t(2), "serverStream<T>(path, _meta) {")
+	f.P(t(3), "return new SSETransport<T>(resolve(path));")
+	f.P(t(2), "},")
+	f.P()
+	f.P(t(2), "duplexStream<TIn, TOut>(path, _meta) {")
+	f.P(t(3), "const wsUrl = resolve(path).replace(/^http/, 'ws');")
+	f.P(t(3), "return new WSTransport<TIn, TOut>(wsUrl);")
+	f.P(t(2), "},")
+	f.P(t(1), "};")
 	f.P("}")
 	f.P()
 }
@@ -153,7 +190,10 @@ func generateServerStreamMethod(
 	f.P(t(3), "if (queryParams.length > 0) {")
 	f.P(t(4), "uri += `?${queryParams.join(\"&\")}`;")
 	f.P(t(3), "}")
-	f.P(t(3), "return StreamFactory.createServerStream<", output.Reference(), ">(uri);")
+	f.P(t(3), "return transport.serverStream<", output.Reference(), ">(uri, {")
+	f.P(t(4), "service: \"", method.Parent().Name(), "\",")
+	f.P(t(4), "method: \"", method.Name(), "\",")
+	f.P(t(3), "});")
 	f.P(t(2), "},")
 }
 
@@ -177,7 +217,10 @@ func generateBidiStreamLiteral(
 	path := literalPath(rule)
 	f.P(t(2), method.Name(), "() {")
 	f.P(t(3), "const path = ", path, ";")
-	f.P(t(3), "return StreamFactory.createDuplexStream(path);")
+	f.P(t(3), "return transport.duplexStream(path, {")
+	f.P(t(4), "service: \"", method.Parent().Name(), "\",")
+	f.P(t(4), "method: \"", method.Name(), "\",")
+	f.P(t(3), "});")
 	f.P(t(2), "},")
 }
 
@@ -189,7 +232,10 @@ func generateBidiStreamWithParams(
 	f.P(t(2), method.Name(), "(request) {")
 	generateMethodPathValidation(f, method.Input(), rule)
 	generateMethodPath(f, method.Input(), rule)
-	f.P(t(3), "return StreamFactory.createDuplexStream(path);")
+	f.P(t(3), "return transport.duplexStream(path, {")
+	f.P(t(4), "service: \"", method.Parent().Name(), "\",")
+	f.P(t(4), "method: \"", method.Name(), "\",")
+	f.P(t(3), "});")
 	f.P(t(2), "},")
 }
 
@@ -223,4 +269,13 @@ func hasPathVariables(rule httprule.Rule) bool {
 
 func isStreamingMethod(method protoreflect.MethodDescriptor) bool {
 	return method.IsStreamingClient() || method.IsStreamingServer()
+}
+
+// getDefaultHost reads the google.api.default_host extension from a service descriptor.
+func getDefaultHost(service protoreflect.ServiceDescriptor) string {
+	ext := proto.GetExtension(service.Options(), annotations.E_DefaultHost)
+	if host, ok := ext.(string); ok {
+		return host
+	}
+	return ""
 }

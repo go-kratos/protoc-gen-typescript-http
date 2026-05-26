@@ -13,8 +13,8 @@ type packageGenerator struct {
 
 func (p packageGenerator) Generate(f *codegen.File) error {
 	p.generateHeader(f)
-	var seenService bool
-	var streamInfraGenerated bool
+	defaultHost := p.readDefaultHost()
+	generateTransportInfra(f, defaultHost)
 	var walkErr error
 	protowalk.WalkFiles(p.files, func(desc protoreflect.Descriptor) bool {
 		if wkt, ok := WellKnownType(desc); ok {
@@ -30,21 +30,13 @@ func (p packageGenerator) Generate(f *codegen.File) error {
 		case protoreflect.EnumDescriptor:
 			enumGenerator{pkg: p.pkg, enum: v}.Generate(f)
 		case protoreflect.ServiceDescriptor:
-			needStream := hasStreamingMethod(v)
-			genStream := needStream && !streamInfraGenerated
-			if genStream {
-				streamInfraGenerated = true
-			}
 			if err := (serviceGenerator{
-				pkg:            p.pkg,
-				service:        v,
-				genHandler:     !seenService,
-				genStreamInfra: genStream,
+				pkg:     p.pkg,
+				service: v,
 			}).Generate(f); err != nil {
 				walkErr = err
 				return false
 			}
-			seenService = true
 		}
 		return true
 	})
@@ -54,14 +46,16 @@ func (p packageGenerator) Generate(f *codegen.File) error {
 	return nil
 }
 
-func hasStreamingMethod(service protoreflect.ServiceDescriptor) bool {
-	methods := service.Methods()
-	for i := 0; i < methods.Len(); i++ {
-		if isStreamingMethod(methods.Get(i)) {
-			return true
+func (p packageGenerator) readDefaultHost() string {
+	for _, file := range p.files {
+		services := file.Services()
+		for i := 0; i < services.Len(); i++ {
+			if host := getDefaultHost(services.Get(i)); host != "" {
+				return host
+			}
 		}
 	}
-	return false
+	return ""
 }
 
 func (p packageGenerator) generateHeader(f *codegen.File) {

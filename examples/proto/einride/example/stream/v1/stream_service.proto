@@ -3,6 +3,7 @@ syntax = "proto3";
 package einride.example.stream.v1;
 
 import "google/api/annotations.proto";
+import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -12,6 +13,8 @@ import "google/protobuf/timestamp.proto";
 // - Server-streaming RPCs are mapped to SSE (Server-Sent Events).
 // - Bidirectional streaming RPCs are mapped to WebSocket.
 service StreamService {
+  option (google.api.default_host) = "api.example.com";
+
   // Get a single log entry.
   //
   // Unary request/response — uses RequestHandler.

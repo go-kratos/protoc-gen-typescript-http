@@ -32,44 +32,69 @@ protoc
 
 ______________________________________________________________________
 
-The generated clients can be used with any HTTP client that returns a Promise
-containing JSON data.
+The generated clients use a `ClientTransport` interface that handles all
+communication — unary requests, server-streaming (SSE), and bidirectional
+streaming (WebSocket).
+
+### Basic usage
 
 ```typescript
-const rootUrl = "...";
+import { createDefaultTransport, createShipperServiceClient } from "./gen";
 
-type Request = {
-  path: string,
-  method: string,
-  body: string | null
-}
+const transport = createDefaultTransport({
+  baseUrl: "https://api.example.com",
+});
 
-function fetchRequestHandler({path, method, body}: Request) {
-  return fetch(rootUrl + path, {method, body}).then(response => response.json())
-}
+const client = createShipperServiceClient(transport);
 
-export function siteClient() {
-  return createShipperServiceClient(fetchRequestHandler);
+// Unary call
+const shipper = await client.GetShipper({ name: "shippers/123" });
+```
+
+### With google.api.default_host
+
+If your proto service defines the `google.api.default_host` option, a
+`DEFAULT_HOST` constant is generated automatically:
+
+```protobuf
+service ShipperService {
+  option (google.api.default_host) = "api.example.com";
+  // ...
 }
+```
+
+```typescript
+// No baseUrl needed — uses DEFAULT_HOST
+const transport = createDefaultTransport();
+const client = createShipperServiceClient(transport);
+```
+
+### Custom fetch and headers
+
+```typescript
+const transport = createDefaultTransport({
+  baseUrl: "/api",
+  headers: { "Authorization": "Bearer token" },
+  request: myCustomFetch,
+});
 ```
 
 ### Streaming
 
 Server-streaming RPCs (`returns (stream ...)`) are generated as **SSE** (Server-Sent Events).
 Bidirectional streaming RPCs (`stream ... returns (stream ...)`) are generated as **WebSocket**.
-Both work alongside the existing `RequestHandler` — no extra configuration needed.
 
 Example proto:
 
 ```protobuf
 service LogService {
   rpc GetLog(GetLogRequest) returns (GetLogResponse) {
-    option (google.api.http) = {get: "/v1/logs"};
+    option (google.api.http) = {get: "/v1/{name=logs/*}"};
   }
 
   // Server-streaming → SSE
   rpc TailLogs(TailLogsRequest) returns (stream LogEntry) {
-    option (google.api.http) = {get: "/v1/logs:tail"};
+    option (google.api.http) = {get: "/v1/{name=logs/*}:tail"};
   }
 
   // Bidirectional streaming → WebSocket
@@ -82,9 +107,10 @@ service LogService {
 Generated usage:
 
 ```typescript
-const client = createLogServiceClient(fetchRequestHandler);
+const transport = createDefaultTransport({ baseUrl: "https://api.example.com" });
+const client = createLogServiceClient(transport);
 
-// Unary — unchanged
+// Unary
 const log = await client.GetLog({ name: "log/123" });
 
 // Server-streaming (SSE)
@@ -108,4 +134,28 @@ chat.onError((err) => {
 });
 chat.send({ text: "hello" });
 // chat.close();
+```
+
+### Implementing a custom transport
+
+The `ClientTransport` interface can be implemented to use any underlying HTTP
+library (Axios, Node.js http, etc.):
+
+```typescript
+import { ClientTransport } from "./gen";
+
+const myTransport: ClientTransport = {
+  unary(path, method, body, meta) {
+    // use your own HTTP client
+    return myHttpClient.request({ url: path, method, body }).then(r => r.json());
+  },
+  serverStream<T>(path, meta) {
+    // return a custom ServerStream implementation
+  },
+  duplexStream<TIn, TOut>(path, meta) {
+    // return a custom DuplexStream implementation
+  },
+};
+
+const client = createMyServiceClient(myTransport);
 ```

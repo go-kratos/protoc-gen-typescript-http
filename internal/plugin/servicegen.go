@@ -11,20 +11,12 @@ import (
 )
 
 type serviceGenerator struct {
-	pkg             protoreflect.FullName
-	genHandler      bool
-	genStreamInfra  bool
-	service         protoreflect.ServiceDescriptor
+	pkg     protoreflect.FullName
+	service protoreflect.ServiceDescriptor
 }
 
 func (s serviceGenerator) Generate(f *codegen.File) error {
 	s.generateInterface(f)
-	if s.genHandler {
-		s.generateHandler(f)
-		if s.genStreamInfra {
-			generateStreamInfra(f)
-		}
-	}
 	return s.generateClient(f)
 }
 
@@ -50,17 +42,6 @@ func (s serviceGenerator) generateInterface(f *codegen.File) {
 	f.P()
 }
 
-func (s serviceGenerator) generateHandler(f *codegen.File) {
-	f.P("type RequestType = {")
-	f.P(t(1), "path: string;")
-	f.P(t(1), "method: string;")
-	f.P(t(1), "body: string | null;")
-	f.P("};")
-	f.P()
-	f.P("type RequestHandler = (request: RequestType, meta: { service: string, method: string }) => Promise<unknown>;")
-	f.P()
-}
-
 func (s serviceGenerator) generateClient(f *codegen.File) error {
 	f.P(
 		"export function create",
@@ -68,7 +49,7 @@ func (s serviceGenerator) generateClient(f *codegen.File) error {
 		"Client(",
 		"\n",
 		t(1),
-		"handler: RequestHandler",
+		"transport: ClientTransport",
 		"\n",
 		"): ",
 		descriptorTypeName(s.service),
@@ -112,11 +93,7 @@ func (s serviceGenerator) generateMethod(f *codegen.File, method protoreflect.Me
 	f.P(t(3), "if (queryParams.length > 0) {")
 	f.P(t(4), "uri += `?${queryParams.join(\"&\")}`")
 	f.P(t(3), "}")
-	f.P(t(3), "return handler({")
-	f.P(t(4), "path: uri,")
-	f.P(t(4), "method: ", strconv.Quote(rule.Method), ",")
-	f.P(t(4), "body,")
-	f.P(t(3), "}, {")
+	f.P(t(3), "return transport.unary(uri, ", strconv.Quote(rule.Method), ", body, {")
 	f.P(t(4), "service: \"", method.Parent().Name(), "\",")
 	f.P(t(4), "method: \"", method.Name(), "\",")
 	f.P(t(3), "}) as Promise<", outputType.Reference(), ">;")
@@ -156,7 +133,7 @@ func generateMethodPath(
 			pathParts = append(pathParts, "${request."+fieldPath+"}")
 		case httprule.SegmentKindLiteral:
 			pathParts = append(pathParts, seg.Literal)
-		case httprule.SegmentKindMatchSingle: // TODO: Double check this and following case
+		case httprule.SegmentKindMatchSingle:
 			pathParts = append(pathParts, "*")
 		case httprule.SegmentKindMatchMultiple:
 			pathParts = append(pathParts, "**")
@@ -191,11 +168,9 @@ func generateMethodQuery(
 	rule httprule.Rule,
 ) {
 	f.P(t(3), "const queryParams: string[] = [];")
-	// nothing in query
 	if rule.Body == "*" {
 		return
 	}
-	// fields covered by path
 	pathCovered := make(map[string]struct{})
 	for _, segment := range rule.Template.Segments {
 		if segment.Kind != httprule.SegmentKindVariable {
