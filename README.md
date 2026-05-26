@@ -69,13 +69,26 @@ const transport = createDefaultTransport();
 const client = createShipperServiceClient(transport);
 ```
 
-### Custom fetch and headers
+### Custom request and headers
+
+`request` accepts a function with the same signature as `fetch`. You can use
+it to add logging, error handling, or delegate to another HTTP library:
 
 ```typescript
+function myRequest(url: string, init: RequestInit): Promise<Response> {
+  console.log("requesting", init.method, url);
+  return fetch(url, init).then((response) => {
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return response;
+  });
+}
+
 const transport = createDefaultTransport({
   baseUrl: "/api",
-  headers: { "Authorization": "Bearer token" },
-  request: myCustomFetch,
+  headers: { Authorization: "Bearer token" },
+  request: myRequest,
 });
 ```
 
