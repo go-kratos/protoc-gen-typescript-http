@@ -75,7 +75,7 @@ const client = createShipperServiceClient(transport);
 it to add logging, error handling, or delegate to another HTTP library:
 
 ```typescript
-function myRequest(url: string, init: RequestInit): Promise<Response> {
+function fetchRequest(url: string, init: RequestInit): Promise<Response> {
   console.log("requesting", init.method, url);
   return fetch(url, init).then((response) => {
     if (!response.ok) {
@@ -88,7 +88,7 @@ function myRequest(url: string, init: RequestInit): Promise<Response> {
 const transport = createDefaultTransport({
   baseUrl: "/api",
   headers: { Authorization: "Bearer token" },
-  request: myRequest,
+  request: fetchRequest,
 });
 ```
 
